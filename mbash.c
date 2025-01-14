@@ -212,10 +212,31 @@ int exec_echo(char** args)
 
 int exec_unknown(char* commande, char** args)
 {
-    printf("Commande non implémentée : %s\n", commande);
+    printf("La commande %s n'est pas reconnue.\n", commande);
+    printf("Tapez COMMANDES pour afficher la liste des commandes implémentées dans mbash.\n");
     return 1;
 }
 
+int exec_pwd()
+{
+    char cwd[PATH_MAX]; // Tampon pour stocker le chemin courant
+
+    if (getcwd(cwd, sizeof(cwd)) != NULL)
+    {
+        // Si le chemin est récupéré avec succès
+        printf("%s\n", cwd);
+        return 0;
+    }
+    else
+    {
+        // Si une erreur survient
+        perror("pwd");
+        return -1;
+    }
+}
+
+
+void afficherListeCommandesDispo();
 
 // Tableau de fonctions
 typedef int (*command_fn)(char**);
@@ -227,10 +248,25 @@ typedef struct
 } command_map;
 
 command_map commands[] = {
+    {"COMMANDES", afficherListeCommandesDispo},
     {"cd", exec_cd},
     {"echo", exec_echo},
+    {"pwd", exec_pwd},
     {NULL, exec_unknown} // Commande par défaut
 };
+
+
+/**
+ * Affiche la liste des commandes disponibles dans mbash
+ */
+void afficherListeCommandesDispo()
+{
+    printf("Liste des commandes disponibles :\n");
+    for (int i = 1; commands[i].command != NULL; i++) // N'affiche pas la commande COMMANDES
+    {
+        printf("- %s\n", commands[i].command);
+    }
+}
 
 
 /**
