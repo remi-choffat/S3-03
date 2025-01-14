@@ -54,7 +54,6 @@ void executeCommand(const char *command, char *arguments[]) {
         getenv("USER"),   // Nom de l'utilisateur
         getenv("SHELL"), //programme shell de l'utilisateur
         getenv("LANG"),  // Langue
-        "CFLAGS=-O2 -Wall",
         NULL              // Terminaison du tableau d'environnement
     };
     // Exécute la commande avec son chemin absolu
