@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <limits.h>
+#include <linux/limits.h>
 
 /**
  * Affiche le prompt de l'interpréteur de commande
@@ -29,6 +29,30 @@ void print_prompt()
 }
 
 
+/**
+ * Exécute la commande donnée
+ * @param commande La commande à exécuter
+ * @param args Les arguments de la commande
+ */
+int exec(char* commande, char** args)
+{
+    // TODO - Exécuter la commande
+    printf("La commande \"%s\" sera exécutée\n", commande);
+    if (args[0] != NULL)
+    {
+        printf("Avec les arguments suivants:\n");
+        for (int i = 0; args[i] != NULL; i++)
+        {
+            printf("  - %s\n", args[i]);
+        }
+    }
+    return 0;
+}
+
+
+/**
+ * Méthode principale
+ */
 int main()
 {
     char input[1024];
@@ -54,7 +78,14 @@ int main()
         if (strlen(input) > 0)
         {
             // Exécute la commande
-            printf("La commande \"%s\" sera exécutée\n", input); // TODO - Exécuter la commande
+            char* commande = strtok(input, " ");
+            char* args[1024];
+            // Remplit la liste des arguments
+            int i = 0;
+            while ((args[i++] = strtok(NULL, " ")))
+            {
+            }
+            exec(commande, args);
         }
     }
 
