@@ -1,8 +1,10 @@
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <linux/limits.h>
+
 
 /**
  * Affiche le prompt de l'interpréteur de commande
@@ -21,11 +23,41 @@ void print_prompt()
     }
 
     // Récupère le nom du dernier répertoire
-    char* last_dir = strrchr(cwd, '/');
-    last_dir = (last_dir != NULL && *(last_dir + 1) != '\0') ? last_dir + 1 : cwd;
+    // char* dir = strrchr(cwd, '/'); // Pour afficher uniquement le dernier dossier
+    char* dir = cwd; // Pour afficher le chemin complet
+    dir = (dir != NULL && *(dir + 1) != '\0') ? dir + 1 : cwd;
 
     // Affiche le prompt
-    printf("%s:%s:$> ", username ? username : "inconnu", last_dir);
+    printf("%s:%s:$> ", username ? username : "inconnu", dir);
+}
+
+
+/**
+ * Change le répertoire courant
+ * @param path Le chemin vers lequel changer
+ * @return 0 si succès, -1 sinon
+ */
+int change_directory(const char* path)
+{
+    if (path == NULL)
+    {
+        // Si aucun chemin n'est donné, va dans le répertoire personnel HOME
+        path = getenv("HOME");
+        if (path == NULL)
+        {
+            fprintf(stderr, "Impossible de trouver le répertoire personnel.\n");
+            fflush(stdout);
+            return -1;
+        }
+    }
+
+    if (chdir(path) != 0)
+    {
+        perror("cd");
+        return -1;
+    }
+    fflush(stdout);
+    return 0;
 }
 
 
@@ -36,6 +68,12 @@ void print_prompt()
  */
 int exec(char* commande, char** args)
 {
+    if (strcmp(commande, "cd") == 0)
+    {
+        // Si la commande est "cd"
+        return change_directory(args[0]);
+    }
+
     // TODO - Exécuter la commande
     printf("La commande \"%s\" sera exécutée\n", commande);
     if (args[0] != NULL)
@@ -55,6 +93,9 @@ int exec(char* commande, char** args)
  */
 int main()
 {
+    // Se positionne dans le répertoire par défaut
+    change_directory(NULL);
+
     char input[1024];
 
     while (1)
@@ -85,6 +126,8 @@ int main()
             while ((args[i++] = strtok(NULL, " ")))
             {
             }
+
+            // Exécute la commande
             exec(commande, args);
         }
     }
