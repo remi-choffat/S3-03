@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <limits.h>
+#include <linux/limits.h>
 
 /**
  * Affiche le prompt de l'interpréteur de commande
