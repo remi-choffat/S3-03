@@ -9,6 +9,13 @@
 
 pid_t child_pid = -1; // Variable pour stocker le PID du processus enfant
 
+#define MAX_COMMAND_LENGTH 1024   // Longueur maximale d'une commande
+
+
+/**
+ * Fonction pour gérer le signal SIGINT (Ctrl+C)
+ * @param sig Signal à gérer
+ */
 void handle_sigint(int sig)
 {
     if (child_pid > 0)
@@ -17,6 +24,10 @@ void handle_sigint(int sig)
     }
 }
 
+
+/**
+ * Affiche le prompt de commande
+ */
 void print_prompt()
 {
     char cwd[PATH_MAX];
@@ -34,7 +45,89 @@ void print_prompt()
     dir = (dir != NULL && *(dir + 1) != '\0') ? dir + 1 : cwd;
 
     // Affiche le prompt
+    printf("\e[32m"); // Couleur verte
     printf("%s:%s:$> ", username ? username : "inconnu", dir);
+    printf("\e[0m"); // Réinitialise la couleur
+}
+
+
+/**
+ * Récupère le chemin complet vers le fichier .mbash_history dans le répertoire personnel.
+ * @param buffer Buffer pour stocker le chemin.
+ * @param size Taille du buffer.
+ * @return 0 si succès, -1 sinon.
+ */
+int get_history_file_path(char* buffer, size_t size)
+{
+    const char* home = getenv("HOME");
+    if (home == NULL)
+    {
+        fprintf(stderr, "Impossible de déterminer le répertoire personnel.\n");
+        return -1;
+    }
+
+    // Construit le chemin complet vers history.txt
+    if (snprintf(buffer, size, "%s/%s", home, ".mbash_history") >= size)
+    {
+        fprintf(stderr, "Chemin du fichier d'historique trop long.\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * Ajoute une commande dans le fichier d'historique.
+ * @param command La commande à enregistrer.
+ */
+void add_to_history(const char* command)
+{
+    char history_path[PATH_MAX];
+    if (get_history_file_path(history_path, sizeof(history_path)) != 0)
+    {
+        return;
+    }
+
+    FILE* file = fopen(history_path, "a"); // Ouvre le fichier en mode ajout
+    if (file == NULL)
+    {
+        perror("Erreur d'ouverture du fichier d'historique");
+        return;
+    }
+
+    fprintf(file, "%s\n", command); // Écrit la commande dans le fichier
+    fclose(file);
+}
+
+/**
+ * Affiche l'historique des commandes.
+ */
+void display_history()
+{
+    char history_path[PATH_MAX];
+    if (get_history_file_path(history_path, sizeof(history_path)) != 0)
+    {
+        return;
+    }
+
+    FILE* file = fopen(history_path, "r"); // Ouvre le fichier en lecture
+    if (file == NULL)
+    {
+        perror("Erreur d'ouverture du fichier d'historique");
+        return;
+    }
+
+    char line[MAX_COMMAND_LENGTH];
+    int line_number = 1;
+
+    // Lit et affiche chaque ligne du fichier
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        line[strcspn(line, "\n")] = '\0'; // Supprime le saut de ligne
+        printf("%d  %s\n", line_number++, line);
+    }
+
+    fclose(file);
 }
 
 
@@ -235,6 +328,18 @@ int exec_pwd()
 }
 
 
+/**
+ * Efface l'écran
+ * @param args Les arguments de la commande clear
+ * @return 0 si succès, -1 sinon
+ */
+int exec_clear(char** args)
+{
+    printf("\033[H\033[J");
+    return 0;
+}
+
+
 void afficherListeCommandesDispo();
 
 // Tableau de fonctions
@@ -251,6 +356,8 @@ command_map commands[] = {
     {"cd", exec_cd},
     {"echo", exec_echo},
     {"pwd", exec_pwd},
+    {"history", display_history},
+    {"clear", exec_clear},
     {NULL, NULL}
 };
 
@@ -307,44 +414,18 @@ char* findCommandPath(const char* command)
 }
 
 // Fonction pour exécuter une commande externe
-void executeCommand(const char* command, char* arguments[])
+void executeCommand(const char* command, char* arguments[], char* envp[])
 {
     // Résout le chemin absolu de la commande
     char* resolvedPath = findCommandPath(command);
     if (!resolvedPath)
     {
-        fprintf(stderr, "Erreur : Commande '%s' inconnue.\n", command);
+        fprintf(stderr, "La commande '%s' n'existe pas.\n", command);
         exit(EXIT_FAILURE);
     }
-    // Définit les variables d'environnement pour le programme enfant
-    // Définit les variables d'environnement pour le programme enfant
-    char lang[256];
-    char path[256];
-    char pwd[256];
-    char home[256];
-    char user[256];
-    char shell[256];
 
-    // Construction des paires clé=valeur
-    snprintf(lang, sizeof(lang), "LANG=%s", getenv("LANG"));
-    snprintf(path, sizeof(path), "PATH=%s", getenv("PATH"));
-    snprintf(pwd, sizeof(pwd), "PWD=%s", getenv("PWD"));
-    snprintf(home, sizeof(home), "HOME=%s", getenv("HOME"));
-    snprintf(user, sizeof(user), "USER=%s", getenv("USER"));
-    snprintf(shell, sizeof(shell), "SHELL=%s", getenv("SHELL"));
-
-    // Tableau des environnements
-    char* env[] = {
-        path,
-        pwd,
-        home,
-        user,
-        shell,
-        lang,
-        NULL // Terminaison du tableau
-    };
     // Exécute la commande avec son chemin absolu
-    if (execve(resolvedPath, arguments, env) == -1)
+    if (execve(resolvedPath, arguments, envp) == -1)
     {
         perror("Erreur lors de l'exécution de execve");
         exit(EXIT_FAILURE);
@@ -356,7 +437,7 @@ void executeCommand(const char* command, char* arguments[])
  * @param commande La commande à exécuter
  * @param args Les arguments de la commande
  */
-int exec(char* commande, char** args)
+int exec(char* commande, char** args, char* envp[])
 {
     // Recherche de la commande dans le tableau
     for (int i = 0; commands[i].command != NULL; i++)
@@ -379,21 +460,13 @@ int exec(char* commande, char** args)
     {
         args[0] = commande;
         // Code du processus enfant
-        executeCommand(commande, args);
+        executeCommand(commande, args, envp);
     }
     else
     {
         // Code du processus parent
         int status;
         waitpid(child_pid, &status, 0); // Attend la fin du processus enfant
-        if (WIFEXITED(status))
-        {
-            printf("La commande s'est terminée avec le code de sortie %d\n", WEXITSTATUS(status));
-        }
-        else
-        {
-            fprintf(stderr, "La commande n'a pas terminé normalement.\n");
-        }
         child_pid = -1;
     }
 
@@ -404,7 +477,7 @@ int exec(char* commande, char** args)
 /**
  * Méthode principale
  */
-int main()
+int main(int argc, char* argv[], char* envp[])
 {
     struct sigaction sa;
     sa.sa_handler = handle_sigint;
@@ -437,6 +510,9 @@ int main()
 
         if (strlen(input) > 0)
         {
+            // Ajoute la commande dans l'historique
+            add_to_history(input);
+
             // Exécute la commande
             char* commande = strtok(input, " ");
             char* args[1024];
@@ -447,7 +523,7 @@ int main()
                 i++;
             }
             // Exécute la commande
-            exec(commande, args);
+            exec(commande, args, envp);
         }
     }
 
