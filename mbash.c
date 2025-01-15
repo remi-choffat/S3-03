@@ -15,8 +15,10 @@ static pid_t child_pid = -1;
  * Gestionnaire de signal SIGINT
  * Transmet SIGINT au processus enfant si existant.
  */
-void handle_sigint(int sig) {
-    if (child_pid > 0) {
+void handle_sigint(int sig)
+{
+    if (child_pid > 0)
+    {
         kill(child_pid, SIGINT);
     }
 }
@@ -24,18 +26,21 @@ void handle_sigint(int sig) {
 /**
  * Affiche le prompt de la ligne de commande.
  */
-void print_prompt() {
+void print_prompt()
+{
     char cwd[PATH_MAX];
-    char *username = getenv("USER");
+    char* username = getenv("USER");
 
-    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+    if (getcwd(cwd, sizeof(cwd)) == NULL)
+    {
         perror("getcwd");
         exit(EXIT_FAILURE);
     }
 
-    // Dernier répertoire du chemin
-    char *dir = strrchr(cwd, '/');
-    dir = (dir && *(dir + 1) != '\0') ? dir + 1 : cwd;
+    // Récupère le nom du dernier répertoire
+    // char* dir = strrchr(cwd, '/'); // Pour afficher uniquement le dernier dossier
+    char* dir = cwd; // Pour afficher le chemin complet
+    dir = (dir != NULL && *(dir + 1) != '\0') ? dir + 1 : cwd;
 
     // Affiche le prompt
     printf("\e[32m"); // Couleur verte
@@ -46,18 +51,21 @@ void print_prompt() {
 /**
  * Évalue une expression simple et retourne le résultat.
  */
-int eval(const char *expr) {
+int eval(const char* expr)
+{
     char command[1024];
     snprintf(command, sizeof(command), "echo $((%s))", expr);
 
-    FILE *fp = popen(command, "r");
-    if (fp == NULL) {
+    FILE* fp = popen(command, "r");
+    if (fp == NULL)
+    {
         perror("popen");
         return 0;
     }
 
     char result[1024];
-    if (fgets(result, sizeof(result), fp) == NULL) {
+    if (fgets(result, sizeof(result), fp) == NULL)
+    {
         pclose(fp);
         return 0;
     }
@@ -69,21 +77,27 @@ int eval(const char *expr) {
 /**
  * Remplace les variables et évalue les expressions dans l'input donné.
  */
-char* replace_variables(char *input) {
+char* replace_variables(char* input)
+{
     static char buffer[1024];
 
-    if (input[0] == '$') {
-        if (input[1] == '(' && input[2] == '(') {
-            char *expr = input + 3;
-            char *end = strstr(expr, "))");
-            if (end) {
+    if (input[0] == '$')
+    {
+        if (input[1] == '(' && input[2] == '(')
+        {
+            char* expr = input + 3;
+            char* end = strstr(expr, "))");
+            if (end)
+            {
                 *end = '\0';
                 snprintf(buffer, sizeof(buffer), "%d", eval(expr));
                 return buffer;
             }
-        } else {
-            char *var_name = input + 1;
-            char *env_value = getenv(var_name);
+        }
+        else
+        {
+            char* var_name = input + 1;
+            char* env_value = getenv(var_name);
             return env_value ? env_value : "";
         }
     }
@@ -173,17 +187,21 @@ void display_history()
  * Change le répertoire courant.
  * Retourne 0 si succès, -1 sinon.
  */
-int change_directory(char **args) {
-    char *path = args[1];
-    if (!path) {
+int change_directory(char** args)
+{
+    char* path = args[1];
+    if (!path)
+    {
         path = getenv("HOME");
-        if (!path) {
+        if (!path)
+        {
             fprintf(stderr, "Impossible de trouver le répertoire personnel.\n");
             return -1;
         }
     }
 
-    if (chdir(path) != 0) {
+    if (chdir(path) != 0)
+    {
         perror("cd");
         return -1;
     }
@@ -193,18 +211,28 @@ int change_directory(char **args) {
 /**
  * Commande echo avec support des échappements et variables.
  */
-void echo_command(char **args) {
-    for (int i = 1; args[i]; i++) {
-        char *arg = replace_variables(args[i]);
-        for (int k = 0; arg[k]; k++) {
-            if (arg[k] == '\\' && arg[k + 1]) {
+void echo_command(char** args)
+{
+    for (int i = 1; args[i]; i++)
+    {
+        char* arg = replace_variables(args[i]);
+        for (int k = 0; arg[k]; k++)
+        {
+            if (arg[k] == '\\' && arg[k + 1])
+            {
                 k++;
-                switch (arg[k]) {
-                    case 'n': putchar('\n'); break;
-                    case 't': putchar('\t'); break;
-                    default: putchar(arg[k]); break;
+                switch (arg[k])
+                {
+                case 'n': putchar('\n');
+                    break;
+                case 't': putchar('\t');
+                    break;
+                default: putchar(arg[k]);
+                    break;
                 }
-            } else {
+            }
+            else
+            {
                 putchar(arg[k]);
             }
         }
@@ -216,12 +244,16 @@ void echo_command(char **args) {
 /**
  * Commande pwd pour afficher le répertoire courant.
  */
-int exec_pwd() {
+int exec_pwd()
+{
     char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd))) {
+    if (getcwd(cwd, sizeof(cwd)))
+    {
         printf("%s\n", cwd);
         return 0;
-    } else {
+    }
+    else
+    {
         perror("pwd");
         return -1;
     }
@@ -230,7 +262,8 @@ int exec_pwd() {
 /**
  * Affiche la liste des commandes disponibles.
  */
-void afficher_liste_commandes() {
+void afficher_liste_commandes()
+{
     printf("Liste des commandes disponibles :\n");
     printf("- cd\n- echo\n- pwd\n- exit\n");
 }
@@ -248,10 +281,11 @@ int exec_clear(char** args)
 }
 
 // Table des commandes internes
-typedef int (*command_fn)(char **);
+typedef int (*command_fn)(char**);
 
-typedef struct {
-    char *command;
+typedef struct
+{
+    char* command;
     command_fn exec_fn;
 } command_map;
 
@@ -268,17 +302,20 @@ command_map commands[] = {
 /**
  * Résout le chemin absolu d'une commande externe.
  */
-char* find_command_path(const char *command) {
-    char *path_env = getenv("PATH");
+char* find_command_path(const char* command)
+{
+    char* path_env = getenv("PATH");
     if (!path_env) return NULL;
 
-    char *path_copy = strdup(path_env);
-    char *token = strtok(path_copy, ":");
+    char* path_copy = strdup(path_env);
+    char* token = strtok(path_copy, ":");
     static char resolved_path[PATH_MAX];
 
-    while (token) {
+    while (token)
+    {
         snprintf(resolved_path, sizeof(resolved_path), "%s/%s", token, command);
-        if (access(resolved_path, X_OK) == 0) {
+        if (access(resolved_path, X_OK) == 0)
+        {
             free(path_copy);
             return resolved_path;
         }
@@ -291,14 +328,17 @@ char* find_command_path(const char *command) {
 /**
  * Exécute une commande externe via execve.
  */
-void execute_command(const char *command, char *args[], char* envp[]) {
-    char *resolved_path = find_command_path(command);
-    if (!resolved_path) {
+void execute_command(const char* command, char* args[], char* envp[])
+{
+    char* resolved_path = find_command_path(command);
+    if (!resolved_path)
+    {
         fprintf(stderr, "Commande '%s' introuvable.\n", command);
         exit(EXIT_FAILURE);
     }
 
-    if (execve(resolved_path, args, envp) == -1) {
+    if (execve(resolved_path, args, envp) == -1)
+    {
         perror("execve");
         exit(EXIT_FAILURE);
     }
@@ -307,28 +347,31 @@ void execute_command(const char *command, char *args[], char* envp[]) {
 /**
  * Exécute une commande (interne ou externe).
  */
-int exec_command(char *command, char **args, char * envp[]) {
+int exec_command(char* command, char** args, char* envp[])
+{
     //cherche commande interne
-    for (int i = 0; commands[i].command; i++) {
-        if (strcmp(command, commands[i].command) == 0) {
+    for (int i = 0; commands[i].command; i++)
+    {
+        if (strcmp(command, commands[i].command) == 0)
+        {
             return commands[i].exec_fn(args);
         }
     }
     //si c'est pas commande interne alors commande externe ou inconnue.
     child_pid = fork();
-    if (child_pid < 0) {
+    if (child_pid < 0)
+    {
         perror("fork");
         return EXIT_FAILURE;
-    } else if (child_pid == 0) {
+    }
+    else if (child_pid == 0)
+    {
         execute_command(command, args, envp);
-    } else {
+    }
+    else
+    {
         int status;
         waitpid(child_pid, &status, 0);
-        if (WIFEXITED(status)) {
-            printf("Code de sortie : %d\n", WEXITSTATUS(status));
-        } else {
-            fprintf(stderr, "Commande terminée anormalement.\n");
-        }
         child_pid = -1;
     }
     return 0;
@@ -337,12 +380,14 @@ int exec_command(char *command, char **args, char * envp[]) {
 /**
  * Programme principal du shell.
  */
-int main(int argc, char* argv[], char* envp[]) {
+int main(int argc, char* argv[], char* envp[])
+{
     signal(SIGINT, handle_sigint);
 
     char input[1024];
 
-    while (1) {
+    while (1)
+    {
         print_prompt();
         if (!fgets(input, sizeof(input), stdin)) break;
 
@@ -351,8 +396,8 @@ int main(int argc, char* argv[], char* envp[]) {
         add_to_history(input);
         if (strcmp(input, "exit") == 0) break;
 
-        char *command = strtok(input, " ");
-        char *args[1024];
+        char* command = strtok(input, " ");
+        char* args[1024];
         int i = 0;
         args[i++] = command;
         while ((args[i++] = strtok(NULL, " ")));
