@@ -7,42 +7,35 @@
 #include <linux/limits.h>
 #include <sys/wait.h>
 
-pid_t child_pid = -1; // Variable pour stocker le PID du processus enfant
-
+// PID du processus enfant
+static pid_t child_pid = -1;
 #define MAX_COMMAND_LENGTH 1024   // Longueur maximale d'une commande
 
-
 /**
- * Fonction pour gérer le signal SIGINT (Ctrl+C)
- * @param sig Signal à gérer
+ * Gestionnaire de signal SIGINT
+ * Transmet SIGINT au processus enfant si existant.
  */
-void handle_sigint(int sig)
-{
-    if (child_pid > 0)
-    {
-        kill(child_pid, SIGINT); // Transmet SIGINT au processus enfant
+void handle_sigint(int sig) {
+    if (child_pid > 0) {
+        kill(child_pid, SIGINT);
     }
 }
 
-
 /**
- * Affiche le prompt de commande
+ * Affiche le prompt de la ligne de commande.
  */
-void print_prompt()
-{
+void print_prompt() {
     char cwd[PATH_MAX];
-    char* username = getenv("USER");
+    char *username = getenv("USER");
 
-    if (getcwd(cwd, sizeof(cwd)) == NULL)
-    {
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
         perror("getcwd");
         exit(EXIT_FAILURE);
     }
 
-    // Récupère le nom du dernier répertoire
-    // char* dir = strrchr(cwd, '/'); // Pour afficher uniquement le dernier dossier
-    char* dir = cwd; // Pour afficher le chemin complet
-    dir = (dir != NULL && *(dir + 1) != '\0') ? dir + 1 : cwd;
+    // Dernier répertoire du chemin
+    char *dir = strrchr(cwd, '/');
+    dir = (dir && *(dir + 1) != '\0') ? dir + 1 : cwd;
 
     // Affiche le prompt
     printf("\e[32m"); // Couleur verte
@@ -50,6 +43,52 @@ void print_prompt()
     printf("\e[0m"); // Réinitialise la couleur
 }
 
+/**
+ * Évalue une expression simple et retourne le résultat.
+ */
+int eval(const char *expr) {
+    char command[1024];
+    snprintf(command, sizeof(command), "echo $((%s))", expr);
+
+    FILE *fp = popen(command, "r");
+    if (fp == NULL) {
+        perror("popen");
+        return 0;
+    }
+
+    char result[1024];
+    if (fgets(result, sizeof(result), fp) == NULL) {
+        pclose(fp);
+        return 0;
+    }
+
+    pclose(fp);
+    return atoi(result);
+}
+
+/**
+ * Remplace les variables et évalue les expressions dans l'input donné.
+ */
+char* replace_variables(char *input) {
+    static char buffer[1024];
+
+    if (input[0] == '$') {
+        if (input[1] == '(' && input[2] == '(') {
+            char *expr = input + 3;
+            char *end = strstr(expr, "))");
+            if (end) {
+                *end = '\0';
+                snprintf(buffer, sizeof(buffer), "%d", eval(expr));
+                return buffer;
+            }
+        } else {
+            char *var_name = input + 1;
+            char *env_value = getenv(var_name);
+            return env_value ? env_value : "";
+        }
+    }
+    return input;
+}
 
 /**
  * Récupère le chemin complet vers le fichier .mbash_history dans le répertoire personnel.
@@ -130,201 +169,70 @@ void display_history()
     fclose(file);
 }
 
-
 /**
- * Évalue une expression simple
- * @param expr Expression à évaluer
- * @return Résultat de l'expression
+ * Change le répertoire courant.
+ * Retourne 0 si succès, -1 sinon.
  */
-int eval(const char* expr)
-{
-    char command[1024];
-    snprintf(command, sizeof(command), "echo $((%s))", expr);
-
-    FILE* fp = popen(command, "r");
-    if (fp == NULL)
-    {
-        perror("popen");
-        return 0;
-    }
-
-    char result[1024];
-    if (fgets(result, sizeof(result), fp) == NULL)
-    {
-        pclose(fp);
-        return 0;
-    }
-
-    pclose(fp);
-    return atoi(result);
-}
-
-
-/**
- * Fonction pour traiter et remplacer les variables
- */
-char* replace_variables(char* input)
-{
-    static char buffer[1024]; // Tampon pour stocker le résultat
-    if (input[0] == '$')
-    {
-        if (input[1] == '(' && input[2] == '(')
-        {
-            // Supprime le '$((' et '))'
-            char* expr = input + 3;
-            char* end = strstr(expr, "))");
-            if (end != NULL)
-            {
-                *end = '\0';
-                // Évalue l'expression arithmétique
-                const int result = eval(expr);
-                snprintf(buffer, sizeof(buffer), "%d", result);
-                return buffer;
-            }
-        }
-        else
-        {
-            // Supprime le '$'
-            char* var_name = input + 1;
-            // Recherche de la variable d'environnement
-            char* env_value = getenv(var_name);
-            if (env_value != NULL)
-            {
-                return env_value;
-            }
-            else
-            {
-                return ""; // Si la variable n'est pas définie, retourne une chaîne vide
-            }
-        }
-    }
-    return input; // Si pas de '$', retourne l'argument tel quel
-}
-
-
-/**
- * Change le répertoire courant
- * @param path Le chemin vers lequel changer
- * @return 0 si succès, -1 sinon
- */
-int change_directory(const char* path)
-{
-    if (path == NULL)
-    {
-        // Si aucun chemin n'est donné, va dans le répertoire personnel HOME
+int change_directory(char **args) {
+    char *path = args[1];
+    if (!path) {
         path = getenv("HOME");
-        if (path == NULL)
-        {
+        if (!path) {
             fprintf(stderr, "Impossible de trouver le répertoire personnel.\n");
-            fflush(stdout);
             return -1;
         }
     }
 
-    if (chdir(path) != 0)
-    {
+    if (chdir(path) != 0) {
         perror("cd");
         return -1;
     }
-    fflush(stdout);
     return 0;
 }
-
 
 /**
- * Exécute la commande echo
- * @param args Les arguments de la commande echo
+ * Commande echo avec support des échappements et variables.
  */
-void echo_command(char** args)
-{
-    for (int i = 1; args[i] != NULL; i++)
-    {
-        char* arg = args[i];
-        char buffer[1024]; // Tampon pour le texte avec interprétation des échappements
-        int j = 0;
-
-        // Remplacer les variables d'environnement
-        arg = replace_variables(arg);
-
-        // Parcourir chaque caractère de l'argument
-        for (int k = 0; arg[k] != '\0'; k++)
-        {
-            if (arg[k] == '\\' && arg[k + 1] != '\0')
-            {
+void echo_command(char **args) {
+    for (int i = 1; args[i]; i++) {
+        char *arg = replace_variables(args[i]);
+        for (int k = 0; arg[k]; k++) {
+            if (arg[k] == '\\' && arg[k + 1]) {
                 k++;
-                switch (arg[k])
-                {
-                case 'n':
-                    buffer[j++] = '\n';
-                    break;
-                case 't':
-                    buffer[j++] = '\t';
-                    break;
-                case '\\':
-                    buffer[j++] = '\\';
-                    break;
-                case '\"':
-                    buffer[j++] = '\"';
-                    break;
-                case '\'':
-                    buffer[j++] = '\'';
-                    break;
-                default:
-                    buffer[j++] = arg[k];
-                    break;
+                switch (arg[k]) {
+                    case 'n': putchar('\n'); break;
+                    case 't': putchar('\t'); break;
+                    default: putchar(arg[k]); break;
                 }
-            }
-            else
-            {
-                buffer[j++] = arg[k];
+            } else {
+                putchar(arg[k]);
             }
         }
-        buffer[j] = '\0'; // Terminaison du tampon
-
-        // Afficher l'argument traité
-        printf("%s", buffer);
-
-        // Ne pas ajouter d'espace entre les arguments, sauf entre les mots
-        if (args[i + 1] != NULL)
-        {
-            printf(" ");
-        }
+        if (args[i + 1]) putchar(' ');
     }
-    printf("\n");
+    putchar('\n');
 }
 
-
-// Définition des fonctions d'exécution des commandes
-
-int exec_cd(char** args)
-{
-    change_directory(args[1]);
-    return 0;
-}
-
-int exec_echo(char** args)
-{
-    echo_command(args);
-    return 0;
-}
-
-
-int exec_pwd()
-{
-    char cwd[PATH_MAX]; // Tampon pour stocker le chemin courant
-
-    if (getcwd(cwd, sizeof(cwd)) != NULL)
-    {
-        // Si le chemin est récupéré avec succès
+/**
+ * Commande pwd pour afficher le répertoire courant.
+ */
+int exec_pwd() {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd))) {
         printf("%s\n", cwd);
         return 0;
-    }
-    else
-    {
-        // Si une erreur survient
+    } else {
         perror("pwd");
         return -1;
     }
+}
+
+/**
+ * Affiche la liste des commandes disponibles.
+ */
+void afficher_liste_commandes() {
+    printf("Liste des commandes disponibles :\n");
+    printf("- cd\n- echo\n- pwd\n- exit\n");
 }
 
 
@@ -339,192 +247,117 @@ int exec_clear(char** args)
     return 0;
 }
 
+// Table des commandes internes
+typedef int (*command_fn)(char **);
 
-void afficherListeCommandesDispo();
-
-// Tableau de fonctions
-typedef int (*command_fn)(char**);
-
-typedef struct
-{
-    char* command;
+typedef struct {
+    char *command;
     command_fn exec_fn;
 } command_map;
 
 command_map commands[] = {
-    {"COMMANDES", afficherListeCommandesDispo},
-    {"cd", exec_cd},
-    {"echo", exec_echo},
-    {"pwd", exec_pwd},
+    {"cd", (command_fn)change_directory},
+    {"echo", echo_command},
+    {"pwd", (command_fn)exec_pwd},
+    {"help", (command_fn)afficher_liste_commandes},
     {"history", display_history},
     {"clear", exec_clear},
     {NULL, NULL}
 };
 
-
 /**
- * Affiche la liste des commandes disponibles dans mbash
+ * Résout le chemin absolu d'une commande externe.
  */
-void afficherListeCommandesDispo()
-{
-    printf("Liste des commandes disponibles :\n");
-    for (int i = 1; commands[i].command != NULL; i++) // N'affiche pas la commande COMMANDES
-    {
-        printf("- %s\n", commands[i].command);
-    }
-}
+char* find_command_path(const char *command) {
+    char *path_env = getenv("PATH");
+    if (!path_env) return NULL;
 
-// Fonction pour résoudre le chemin absolu d'une commande à partir de la variable PATH
-char* findCommandPath(const char* command)
-{
-    // Récupère la variable d'environnement PATH
-    char* pathEnv = getenv("PATH");
-    if (!pathEnv)
-    {
-        fprintf(stderr, "Erreur : La variable PATH n'est pas définie.\n");
-        return NULL;
-    }
-    // Crée une copie de PATH pour éviter de modifier l'original
-    char* pathCopy = strdup(pathEnv);
-    if (!pathCopy)
-    {
-        perror("Erreur lors de la duplication de PATH");
-        return NULL;
-    }
-    // Initialisation pour analyser PATH et rechercher le chemin de la commande
-    char* token = strtok(pathCopy, ":");
-    static char resolvedPath[1024];
-    // Parcours des répertoires dans PATH
-    while (token != NULL)
-    {
-        // Construit le chemin complet pour la commande
-        snprintf(resolvedPath, sizeof(resolvedPath), "%s/%s", token, command);
-        // Vérifie si le fichier est exécutable
-        if (access(resolvedPath, X_OK) == 0)
-        {
-            free(pathCopy); // Libère la mémoire allouée pour pathCopy
-            return resolvedPath; // Retourne le chemin résolu
+    char *path_copy = strdup(path_env);
+    char *token = strtok(path_copy, ":");
+    static char resolved_path[PATH_MAX];
+
+    while (token) {
+        snprintf(resolved_path, sizeof(resolved_path), "%s/%s", token, command);
+        if (access(resolved_path, X_OK) == 0) {
+            free(path_copy);
+            return resolved_path;
         }
-        // Passe au répertoire suivant dans PATH
         token = strtok(NULL, ":");
     }
-    // Si la commande n'a pas été trouvée, nettoie et retourne NULL
-    free(pathCopy);
+    free(path_copy);
     return NULL;
 }
 
-// Fonction pour exécuter une commande externe
-void executeCommand(const char* command, char* arguments[], char* envp[])
-{
-    // Résout le chemin absolu de la commande
-    char* resolvedPath = findCommandPath(command);
-    if (!resolvedPath)
-    {
-        fprintf(stderr, "La commande '%s' n'existe pas.\n", command);
+/**
+ * Exécute une commande externe via execve.
+ */
+void execute_command(const char *command, char *args[], char* envp[]) {
+    char *resolved_path = find_command_path(command);
+    if (!resolved_path) {
+        fprintf(stderr, "Commande '%s' introuvable.\n", command);
         exit(EXIT_FAILURE);
     }
 
-    // Exécute la commande avec son chemin absolu
-    if (execve(resolvedPath, arguments, envp) == -1)
-    {
-        perror("Erreur lors de l'exécution de execve");
+    if (execve(resolved_path, args, envp) == -1) {
+        perror("execve");
         exit(EXIT_FAILURE);
     }
 }
 
 /**
- * Exécute la commande donnée
- * @param commande La commande à exécuter
- * @param args Les arguments de la commande
+ * Exécute une commande (interne ou externe).
  */
-int exec(char* commande, char** args, char* envp[])
-{
-    // Recherche de la commande dans le tableau
-    for (int i = 0; commands[i].command != NULL; i++)
-    {
-        if (strcmp(commande, commands[i].command) == 0)
-        {
+int exec_command(char *command, char **args, char * envp[]) {
+    //cherche commande interne
+    for (int i = 0; commands[i].command; i++) {
+        if (strcmp(command, commands[i].command) == 0) {
             return commands[i].exec_fn(args);
         }
     }
-    // Si commande inconnue, appeler exec_unknown
-    // Crée un processus enfant
+    //si c'est pas commande interne alors commande externe ou inconnue.
     child_pid = fork();
-
-    if (child_pid < 0)
-    {
-        perror("Erreur lors de la création du processus enfant");
+    if (child_pid < 0) {
+        perror("fork");
         return EXIT_FAILURE;
-    }
-    else if (child_pid == 0)
-    {
-        args[0] = commande;
-        // Code du processus enfant
-        executeCommand(commande, args, envp);
-    }
-    else
-    {
-        // Code du processus parent
+    } else if (child_pid == 0) {
+        execute_command(command, args, envp);
+    } else {
         int status;
-        waitpid(child_pid, &status, 0); // Attend la fin du processus enfant
+        waitpid(child_pid, &status, 0);
+        if (WIFEXITED(status)) {
+            printf("Code de sortie : %d\n", WEXITSTATUS(status));
+        } else {
+            fprintf(stderr, "Commande terminée anormalement.\n");
+        }
         child_pid = -1;
     }
-
     return 0;
 }
 
-
 /**
- * Méthode principale
+ * Programme principal du shell.
  */
-int main(int argc, char* argv[], char* envp[])
-{
-    struct sigaction sa;
-    sa.sa_handler = handle_sigint;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, NULL);
-
-    // Se positionne dans le répertoire par défaut
-    change_directory(NULL);
+int main(int argc, char* argv[], char* envp[]) {
+    signal(SIGINT, handle_sigint);
 
     char input[1024];
 
-    while (1)
-    {
+    while (1) {
         print_prompt();
+        if (!fgets(input, sizeof(input), stdin)) break;
 
-        if (fgets(input, sizeof(input), stdin) == NULL)
-        {
-            printf("\n");
-            break; // Quitte sur Ctrl+D
-        }
+        input[strcspn(input, "\n")] = '\0';
+        // Ajoute la commande dans l'historique
+        add_to_history(input);
+        if (strcmp(input, "exit") == 0) break;
 
-        input[strcspn(input, "\n")] = '\0'; // Supprime le saut de ligne
+        char *command = strtok(input, " ");
+        char *args[1024];
+        int i = 0;
+        args[i++] = command;
+        while ((args[i++] = strtok(NULL, " ")));
 
-        if (strcmp(input, "exit") == 0)
-        {
-            // Quitte sur "exit"
-            break;
-        }
-
-        if (strlen(input) > 0)
-        {
-            // Ajoute la commande dans l'historique
-            add_to_history(input);
-
-            // Exécute la commande
-            char* commande = strtok(input, " ");
-            char* args[1024];
-            // Remplit la liste des arguments
-            int i = 1;
-            while ((args[i] = strtok(NULL, " ")))
-            {
-                i++;
-            }
-            // Exécute la commande
-            exec(commande, args, envp);
-        }
+        exec_command(command, args, envp);
     }
 
     return 0;
