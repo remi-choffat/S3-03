@@ -6,10 +6,14 @@
 #include <ctype.h>
 #include <linux/limits.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
 // PID du processus enfant
 static pid_t child_pid = -1;
-#define MAX_COMMAND_LENGTH 1024   // Longueur maximale d'une commande
+
+// Longueur maximale d'une commande
+#define MAX_COMMAND_LENGTH 1024
 
 /**
  * Gestionnaire de signal SIGINT
@@ -26,10 +30,24 @@ void handle_sigint(int sig)
 /**
  * Affiche le prompt de la ligne de commande.
  */
-void print_prompt()
+void print_prompt(char* envp[])
 {
     char cwd[PATH_MAX];
-    char* username = getenv("USER");
+    char* username = NULL;
+    char* home = NULL;
+
+    // Retrieve USER and HOME from envp
+    for (int i = 0; envp[i] != NULL; i++)
+    {
+        if (strncmp(envp[i], "USER=", 5) == 0)
+        {
+            username = envp[i] + 5;
+        }
+        else if (strncmp(envp[i], "HOME=", 5) == 0)
+        {
+            home = envp[i] + 5;
+        }
+    }
 
     if (getcwd(cwd, sizeof(cwd)) == NULL)
     {
@@ -37,16 +55,77 @@ void print_prompt()
         exit(EXIT_FAILURE);
     }
 
-    // Récupère le nom du dernier répertoire
-    // char* dir = strrchr(cwd, '/'); // Pour afficher uniquement le dernier dossier
-    char* dir = cwd; // Pour afficher le chemin complet
-    dir = (dir != NULL && *(dir + 1) != '\0') ? dir + 1 : cwd;
-
-    // Affiche le prompt
-    printf("\e[32m"); // Couleur verte
-    printf("%s:%s:$> ", username ? username : "inconnu", dir);
-    printf("\e[0m"); // Réinitialise la couleur
+    // Replace home directory with ~
+    if (home && strstr(cwd, home) == cwd)
+    {
+        printf("\033[1;32m%s\033[0m:\033[1;34m~%s\033[0m$> ",
+               username ? username : "unknown", cwd + strlen(home));
+    }
+    else
+    {
+        printf("\033[1;32m%s\033[0m:\033[1;34m%s\033[0m$> ",
+               username ? username : "unknown", cwd);
+    }
 }
+
+
+/**
+ * Affiche la liste des fichiers du répertoire avec des couleurs.
+ */
+void list_files_with_colors(char** args)
+{
+    FILE* fp;
+    char path[1035];
+    char command[1024] = "ls";
+
+    // Append arguments to the command
+    for (int i = 1; args[i]; i++)
+    {
+        strcat(command, " ");
+        strcat(command, args[i]);
+    }
+
+    // Open the command for reading
+    fp = popen(command, "r");
+    if (fp == NULL)
+    {
+        perror("popen");
+        return;
+    }
+
+    // Read the output a line at a time and colorize it
+    while (fgets(path, sizeof(path) - 1, fp) != NULL)
+    {
+        // Remove the newline character
+        path[strcspn(path, "\n")] = '\0';
+
+        // Extract the file name from the output
+        char* file_name = strrchr(path, ' ');
+        if (file_name)
+        {
+            file_name++;
+        }
+        else
+        {
+            file_name = path;
+        }
+
+        // Check if the path is a directory
+        struct stat statbuf;
+        if (stat(file_name, &statbuf) == 0 && S_ISDIR(statbuf.st_mode))
+        {
+            printf("\033[1;34m%s\033[0m\n", path); // Bold blue for directories
+        }
+        else
+        {
+            printf("\033[0;32m%s\033[0m\n", path); // Green for files
+        }
+    }
+
+    // Close the file pointer
+    pclose(fp);
+}
+
 
 /**
  * Évalue une expression simple et retourne le résultat.
@@ -358,7 +437,15 @@ int exec_command(char* command, char** args, char* envp[])
             return commands[i].exec_fn(args);
         }
     }
-    //si c'est pas commande interne alors commande externe ou inconnue.
+
+    // Intercepte le ls pour afficher les fichiers avec des couleurs
+    if (strcmp(command, "ls") == 0)
+    {
+        list_files_with_colors(args);
+        return 0;
+    }
+
+    // S'il ne s'agit pas d'une commande interne
     child_pid = fork();
     if (child_pid < 0)
     {
@@ -389,12 +476,19 @@ int main(int argc, char* argv[], char* envp[])
 
     while (1)
     {
-        print_prompt();
-        if (!fgets(input, sizeof(input), stdin)) break;
+        print_prompt(envp);
+
+        if (!fgets(input, sizeof(input), stdin))
+        {
+            putchar('\n');
+            break;
+        }
 
         input[strcspn(input, "\n")] = '\0';
+
         // Ajoute la commande dans l'historique
         add_to_history(input);
+
         if (strcmp(input, "exit") == 0) break;
 
         char* command = strtok(input, " ");
