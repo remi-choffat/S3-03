@@ -45,7 +45,9 @@ void print_prompt()
     dir = (dir != NULL && *(dir + 1) != '\0') ? dir + 1 : cwd;
 
     // Affiche le prompt
+    printf("\e[32m"); // Couleur verte
     printf("%s:%s:$> ", username ? username : "inconnu", dir);
+    printf("\e[0m"); // Réinitialise la couleur
 }
 
 
@@ -326,6 +328,18 @@ int exec_pwd()
 }
 
 
+/**
+ * Efface l'écran
+ * @param args Les arguments de la commande clear
+ * @return 0 si succès, -1 sinon
+ */
+int exec_clear(char** args)
+{
+    printf("\033[H\033[J");
+    return 0;
+}
+
+
 void afficherListeCommandesDispo();
 
 // Tableau de fonctions
@@ -343,6 +357,7 @@ command_map commands[] = {
     {"echo", exec_echo},
     {"pwd", exec_pwd},
     {"history", display_history},
+    {"clear", exec_clear},
     {NULL, NULL}
 };
 
@@ -478,14 +493,6 @@ int exec(char* commande, char** args)
         // Code du processus parent
         int status;
         waitpid(child_pid, &status, 0); // Attend la fin du processus enfant
-        if (WIFEXITED(status))
-        {
-            printf("La commande s'est terminée avec le code de sortie %d\n", WEXITSTATUS(status));
-        }
-        else
-        {
-            fprintf(stderr, "La commande n'a pas terminé normalement.\n");
-        }
         child_pid = -1;
     }
 
