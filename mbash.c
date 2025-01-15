@@ -155,19 +155,19 @@ void add_to_history(const char* command)
 /**
  * Affiche l'historique des commandes.
  */
-void display_history()
+int display_history()
 {
     char history_path[PATH_MAX];
     if (get_history_file_path(history_path, sizeof(history_path)) != 0)
     {
-        return;
+        return 0;
     }
 
     FILE* file = fopen(history_path, "r"); // Ouvre le fichier en lecture
     if (file == NULL)
     {
         perror("Erreur d'ouverture du fichier d'historique");
-        return;
+        return -1;
     }
 
     char line[MAX_COMMAND_LENGTH];
@@ -211,7 +211,7 @@ int change_directory(char** args)
 /**
  * Commande echo avec support des échappements et variables.
  */
-void echo_command(char** args)
+int echo_command(char** args)
 {
     for (int i = 1; args[i]; i++)
     {
@@ -239,6 +239,7 @@ void echo_command(char** args)
         if (args[i + 1]) putchar(' ');
     }
     putchar('\n');
+    return 0;
 }
 
 /**
