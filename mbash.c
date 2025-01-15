@@ -52,7 +52,7 @@ void print_prompt()
 
 
 /**
- * Récupère le chemin complet vers le fichier history.txt dans le répertoire personnel.
+ * Récupère le chemin complet vers le fichier .mbash_history dans le répertoire personnel.
  * @param buffer Buffer pour stocker le chemin.
  * @param size Taille du buffer.
  * @return 0 si succès, -1 sinon.
@@ -414,7 +414,7 @@ char* findCommandPath(const char* command)
 }
 
 // Fonction pour exécuter une commande externe
-void executeCommand(const char* command, char* arguments[])
+void executeCommand(const char* command, char* arguments[], char* envp[])
 {
     // Résout le chemin absolu de la commande
     char* resolvedPath = findCommandPath(command);
@@ -424,34 +424,8 @@ void executeCommand(const char* command, char* arguments[])
         exit(EXIT_FAILURE);
     }
 
-    // Définit les variables d'environnement pour le programme enfant
-    char lang[256];
-    char path[256];
-    char pwd[256];
-    char home[256];
-    char user[256];
-    char shell[256];
-
-    // Construction des paires clé=valeur
-    snprintf(lang, sizeof(lang), "LANG=%s", getenv("LANG"));
-    snprintf(path, sizeof(path), "PATH=%s", getenv("PATH"));
-    snprintf(pwd, sizeof(pwd), "PWD=%s", getenv("PWD"));
-    snprintf(home, sizeof(home), "HOME=%s", getenv("HOME"));
-    snprintf(user, sizeof(user), "USER=%s", getenv("USER"));
-    snprintf(shell, sizeof(shell), "SHELL=%s", getenv("SHELL"));
-
-    // Tableau des environnements
-    char* env[] = {
-        path,
-        pwd,
-        home,
-        user,
-        shell,
-        lang,
-        NULL // Terminaison du tableau
-    };
     // Exécute la commande avec son chemin absolu
-    if (execve(resolvedPath, arguments, env) == -1)
+    if (execve(resolvedPath, arguments, envp) == -1)
     {
         perror("Erreur lors de l'exécution de execve");
         exit(EXIT_FAILURE);
@@ -463,7 +437,7 @@ void executeCommand(const char* command, char* arguments[])
  * @param commande La commande à exécuter
  * @param args Les arguments de la commande
  */
-int exec(char* commande, char** args)
+int exec(char* commande, char** args, char* envp[])
 {
     // Recherche de la commande dans le tableau
     for (int i = 0; commands[i].command != NULL; i++)
@@ -486,7 +460,7 @@ int exec(char* commande, char** args)
     {
         args[0] = commande;
         // Code du processus enfant
-        executeCommand(commande, args);
+        executeCommand(commande, args, envp);
     }
     else
     {
@@ -503,7 +477,7 @@ int exec(char* commande, char** args)
 /**
  * Méthode principale
  */
-int main()
+int main(int argc, char* argv[], char* envp[])
 {
     struct sigaction sa;
     sa.sa_handler = handle_sigint;
@@ -549,7 +523,7 @@ int main()
                 i++;
             }
             // Exécute la commande
-            exec(commande, args);
+            exec(commande, args, envp);
         }
     }
 
