@@ -216,7 +216,6 @@ int exec_echo(char** args)
 }
 
 
-
 int exec_pwd()
 {
     char cwd[PATH_MAX]; // Tampon pour stocker le chemin courant
@@ -369,7 +368,7 @@ int exec(char* commande, char** args)
     }
     // Si commande inconnue, appeler exec_unknown
     // Crée un processus enfant
-    pid_t pid = fork();
+    child_pid = fork();
 
     if (child_pid < 0)
     {
