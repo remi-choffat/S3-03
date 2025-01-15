@@ -139,7 +139,7 @@ int change_directory(const char* path)
  */
 void echo_command(char** args)
 {
-    for (int i = 0; args[i] != NULL; i++)
+    for (int i = 1; args[i] != NULL; i++)
     {
         char* arg = args[i];
         char buffer[1024]; // Tampon pour le texte avec interprétation des échappements
@@ -200,7 +200,7 @@ void echo_command(char** args)
 
 int exec_cd(char** args)
 {
-    change_directory(args[0]);
+    change_directory(args[1]);
     return 0;
 }
 
@@ -312,14 +312,31 @@ void executeCommand(const char* command, char* arguments[])
         exit(EXIT_FAILURE);
     }
     // Définit les variables d'environnement pour le programme enfant
+    // Définit les variables d'environnement pour le programme enfant
+    char lang[256];
+    char path[256];
+    char pwd[256];
+    char home[256];
+    char user[256];
+    char shell[256];
+
+    // Construction des paires clé=valeur
+    snprintf(lang, sizeof(lang), "LANG=%s", getenv("LANG"));
+    snprintf(path, sizeof(path), "PATH=%s", getenv("PATH"));
+    snprintf(pwd, sizeof(pwd), "PWD=%s", getenv("PWD"));
+    snprintf(home, sizeof(home), "HOME=%s", getenv("HOME"));
+    snprintf(user, sizeof(user), "USER=%s", getenv("USER"));
+    snprintf(shell, sizeof(shell), "SHELL=%s", getenv("SHELL"));
+
+    // Tableau des environnements
     char* env[] = {
-        getenv("PATH"), // Inclut PATH
-        getenv("PWD"), // Répertoire courant
-        getenv("HOME"), // Répertoire personnel
-        getenv("USER"), // Nom de l'utilisateur
-        getenv("SHELL"), //programme shell de l'utilisateur
-        getenv("LANG"), // Langue
-        NULL // Terminaison du tableau d'environnement
+        path,
+        pwd,
+        home,
+        user,
+        shell,
+        lang,
+        NULL // Terminaison du tableau
     };
     // Exécute la commande avec son chemin absolu
     if (execve(resolvedPath, arguments, env) == -1)
@@ -355,6 +372,7 @@ int exec(char* commande, char** args)
     }
     else if (pid == 0)
     {
+        args[0] = commande;
         // Code du processus enfant
         executeCommand(commande, args);
     }
@@ -411,13 +429,11 @@ int main()
             char* commande = strtok(input, " ");
             char* args[1024];
             // Remplit la liste des arguments
-            int i = 0;
+            int i = 1;
             while ((args[i] = strtok(NULL, " ")))
             {
                 i++;
             }
-            args[i] = NULL;
-
             // Exécute la commande
             exec(commande, args);
         }
