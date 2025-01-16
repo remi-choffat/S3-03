@@ -8,6 +8,8 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 // PID du processus enfant
 static pid_t child_pid = -1;
@@ -30,8 +32,9 @@ void handle_sigint(int sig)
 /**
  * Affiche le prompt de la ligne de commande.
  */
-void print_prompt(char* envp[])
+char* get_prompt(char* envp[])
 {
+    static char prompt[PATH_MAX + 50];
     char cwd[PATH_MAX];
     char* username = NULL;
     char* home = NULL;
@@ -58,14 +61,16 @@ void print_prompt(char* envp[])
     // Replace home directory with ~
     if (home && strstr(cwd, home) == cwd)
     {
-        printf("\033[1;32m%s\033[0m:\033[1;34m~%s\033[0m$> ",
-               username ? username : "unknown", cwd + strlen(home));
+        snprintf(prompt, sizeof(prompt), "\033[1;32m%s\033[0m:\033[1;34m~%s\033[0m$> ",
+                 username ? username : "unknown", cwd + strlen(home));
     }
     else
     {
-        printf("\033[1;32m%s\033[0m:\033[1;34m%s\033[0m$> ",
-               username ? username : "unknown", cwd);
+        snprintf(prompt, sizeof(prompt), "\033[1;32m%s\033[0m:\033[1;34m%s\033[0m$> ",
+                 username ? username : "unknown", cwd);
     }
+
+    return prompt;
 }
 
 
@@ -260,6 +265,7 @@ int display_history()
     }
 
     fclose(file);
+    return 0;
 }
 
 /**
@@ -339,26 +345,6 @@ int exec_pwd()
     }
 }
 
-/**
- * Affiche la liste des commandes disponibles.
- */
-void afficher_liste_commandes()
-{
-    printf("Liste des commandes disponibles :\n");
-    printf("- cd\n- echo\n- pwd\n- exit\n");
-}
-
-
-/**
- * Efface l'écran
- * @param args Les arguments de la commande clear
- * @return 0 si succès, -1 sinon
- */
-int exec_clear(char** args)
-{
-    printf("\033[H\033[J");
-    return 0;
-}
 
 // Table des commandes internes
 typedef int (*command_fn)(char**);
@@ -373,9 +359,7 @@ command_map commands[] = {
     {"cd", (command_fn)change_directory},
     {"echo", echo_command},
     {"pwd", (command_fn)exec_pwd},
-    {"help", (command_fn)afficher_liste_commandes},
     {"history", display_history},
-    {"clear", exec_clear},
     {NULL, NULL}
 };
 
@@ -472,24 +456,37 @@ int main(int argc, char* argv[], char* envp[])
 {
     signal(SIGINT, handle_sigint);
 
-    char input[1024];
+    char* input;
+    char history_path[PATH_MAX];
+
+    // Charger l'historique depuis le fichier
+    if (get_history_file_path(history_path, sizeof(history_path)) == 0)
+    {
+        read_history(history_path);
+    }
 
     while (1)
     {
-        print_prompt(envp);
+        char* prompt = get_prompt(envp);
+        input = readline(prompt); // Utilise readline pour lire l'entrée de l'utilisateur
 
-        if (!fgets(input, sizeof(input), stdin))
+        if (!input)
         {
             putchar('\n');
             break;
         }
 
-        input[strcspn(input, "\n")] = '\0';
+        if (strlen(input) > 0)
+        {
+            add_history(input); // Ajoute la commande à l'historique
+            add_to_history(input); // Ajoute la commande dans le fichier d'historique
+        }
 
-        // Ajoute la commande dans l'historique
-        add_to_history(input);
-
-        if (strcmp(input, "exit") == 0) break;
+        if (strcmp(input, "exit") == 0)
+        {
+            free(input);
+            break;
+        }
 
         char* command = strtok(input, " ");
         char* args[1024];
@@ -498,6 +495,14 @@ int main(int argc, char* argv[], char* envp[])
         while ((args[i++] = strtok(NULL, " ")));
 
         exec_command(command, args, envp);
+
+        free(input);
+    }
+
+    // Sauvegarder l'historique dans le fichier
+    if (get_history_file_path(history_path, sizeof(history_path)) == 0)
+    {
+        write_history(history_path);
     }
 
     return 0;
