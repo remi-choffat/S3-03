@@ -470,6 +470,7 @@ command_map commands[] = {
     {"echo", echo_command},
     {"pwd", (command_fn)exec_pwd},
     {"history", display_history},
+    {"ls", (command_fn)list_files_with_colors},
     {NULL, NULL}
 };
 
@@ -523,6 +524,21 @@ void execute_command(const char* command, char* args[], char* envp[])
  */
 int exec_command(char* command, char** args, char* envp[])
 {
+    static int background_pid = 1;  // Compteur pour les processus en arrière-plan
+    int background = 0;
+    int num_args = 0;
+    
+    // Compter le nombre d'arguments
+    while (args[num_args] != NULL) {
+        num_args++;
+    }
+    
+    // Vérifier si le dernier argument est "&"
+    if (num_args > 0 && strcmp(args[num_args - 1], "&") == 0) {
+        background = 1;
+        args[num_args - 1] = NULL;  // Supprimer '&' des arguments
+    }
+
     if (strchr(command, '='))
     {
         char* name = strtok(command, "=");
@@ -534,23 +550,37 @@ int exec_command(char* command, char** args, char* envp[])
         return 0;
     }
 
-    //cherche commande interne
+    // Cherche commande interne
     for (int i = 0; commands[i].command; i++)
     {
         if (strcmp(command, commands[i].command) == 0)
         {
-            return commands[i].exec_fn(args);
+            // Si la commande est interne, on vérifie si elle doit être lancée en arrière-plan
+            if (background) {
+                pid_t child_pid = fork();
+                if (child_pid < 0)
+                {
+                    perror("fork");
+                    return EXIT_FAILURE;
+                }
+                else if (child_pid == 0)
+                {
+                    // Exécution de la commande interne dans le processus enfant
+                    commands[i].exec_fn(args);
+                    exit(0); // Ne pas laisser le processus enfant traîner
+                }
+                else
+                {
+                    printf("[%d] %d\n", background_pid++, child_pid); // Afficher le PID du processus en arrière-plan
+                    return 0;
+                }
+            } else {
+                return commands[i].exec_fn(args);
+            }
         }
     }
 
-    // Intercepte le ls pour afficher les fichiers avec des couleurs
-    if (strcmp(command, "ls") == 0)
-    {
-        list_files_with_colors(args);
-        return 0;
-    }
-
-    // S'il ne s'agit pas d'une commande interne
+    // Si ce n'est pas une commande interne
     child_pid = fork();
     if (child_pid < 0)
     {
@@ -559,74 +589,103 @@ int exec_command(char* command, char** args, char* envp[])
     }
     else if (child_pid == 0)
     {
+        // Exécution de la commande externe dans le processus enfant
         execute_command(command, args, envp);
     }
     else
     {
-        int status;
-        waitpid(child_pid, &status, 0);
+        if (!background)
+        {
+            int status;
+            waitpid(child_pid, &status, 0); // Attendre que le processus enfant se termine
+        }
+        else
+        {
+            printf("[%d] %d\n", background_pid++, child_pid); // Afficher le PID du processus en arrière-plan
+        }
         child_pid = -1;
     }
     return 0;
 }
 
-/**
- * Programme principal du shell.
- */
-int main(int argc, char* argv[], char* envp[])
-{
-    signal(SIGINT, handle_sigint);
 
-    char* input;
-    char history_path[PATH_MAX];
 
-    // Charger l'historique depuis le fichier
-    if (get_history_file_path(history_path, sizeof(history_path)) == 0)
-    {
-        read_history(history_path);
+    // Function to split input into commands and separators
+void parse_input(char* input, char* commands[], int* command_count) {
+    char* token;
+    char* input_copy = strdup(input);
+    int cmd_idx = 0, sep_idx = 0;
+
+    token = strtok(input_copy, ";"); 
+    while (token) {
+        commands[cmd_idx++] = strdup(token);
+
+        // Find the separator immediately after the token
+        char* sep = input + (token - input_copy) + strlen(token);
+        token = strtok(NULL, ";"); 
     }
 
-    while (1)
-    {
-        char* prompt = get_prompt(envp);
-        input = readline(prompt); // Utilise readline pour lire l'entrée de l'utilisateur
+    commands[cmd_idx] = NULL;
+    *command_count = cmd_idx;
 
-        if (!input)
-        {
-            putchar('\n');
-            break;
-        }
-
-        if (strlen(input) > 0)
-        {
-            add_history(input); // Ajoute la commande à l'historique
-            add_to_history(input); // Ajoute la commande dans le fichier d'historique
-        }
-
-        if (strcmp(input, "exit") == 0)
-        {
-            free(input);
-            break;
-        }
-
-        char* command = strtok(input, " ");
-        char* args[1024];
-        int i = 0;
-        args[i++] = command;
-        while ((args[i++] = strtok(NULL, " ")))
-        {
-        }
-
-        exec_command(command, args, envp);
-
-        free(input);
-    }
-
-    // Sauvegarder l'historique dans le fichier
-    if (get_history_file_path(history_path, sizeof(history_path)) == 0)
-    {
-        write_history(history_path);
-    }
-
-    return 0;
+    free(input_copy);
 }
+
+    int main(int argc, char* argv[], char* envp[]) {
+        signal(SIGINT, handle_sigint);
+
+        char* input;
+        char history_path[PATH_MAX];
+
+        // Charger l'historique depuis le fichier
+        if (get_history_file_path(history_path, sizeof(history_path)) == 0) {
+            read_history(history_path);
+        }
+
+        while (1) {
+            char* prompt = get_prompt(envp);
+            input = readline(prompt); // Utilise readline pour lire l'entrée de l'utilisateur
+
+            if (!input) {
+                putchar('\n');
+                break;
+            }
+
+            if (strlen(input) > 0) {
+                add_history(input); // Ajoute la commande à l'historique
+                add_to_history(input); // Ajoute la commande dans le fichier d'historique
+            }
+
+            if (strcmp(input, "exit") == 0) {
+                free(input);
+                break;
+            }
+
+            char* commands[1024];
+            int command_count = 0;
+
+            parse_input(input, commands, &command_count);
+
+            // Exemple simple d'exécution des commandes (à étendre selon les besoins)
+            for (int i = 0; i < command_count; i++) {
+                char* args[1024];
+                int j = 0;
+
+                args[j++] = strtok(commands[i], " ");
+                while ((args[j++] = strtok(NULL, " "))) {
+                }
+
+                exec_command(args[0], args, envp);
+            }
+
+            // Libérer la mémoire
+            free(input);
+        }
+
+        // Sauvegarder l'historique dans le fichier
+        if (get_history_file_path(history_path, sizeof(history_path)) == 0) {
+            write_history(history_path);
+        }
+
+        return 0;
+    }
