@@ -519,6 +519,7 @@ void execute_command(const char* command, char* args[], char* envp[])
     }
 }
 
+
 /**
  * Exécute une commande (interne ou externe).
  */
@@ -527,12 +528,13 @@ int exec_command(char* command, char** args, char* envp[])
     static int background_pid = 1;  // Compteur pour les processus en arrière-plan
     int background = 0;
     int num_args = 0;
-    
+    pid_t child_pid;
+
     // Compter le nombre d'arguments
     while (args[num_args] != NULL) {
         num_args++;
     }
-    
+
     // Vérifier si le dernier argument est "&"
     if (num_args > 0 && strcmp(args[num_args - 1], "&") == 0) {
         background = 1;
@@ -557,7 +559,7 @@ int exec_command(char* command, char** args, char* envp[])
         {
             // Si la commande est interne, on vérifie si elle doit être lancée en arrière-plan
             if (background) {
-                pid_t child_pid = fork();
+                child_pid = fork();
                 if (child_pid < 0)
                 {
                     perror("fork");
@@ -565,6 +567,10 @@ int exec_command(char* command, char** args, char* envp[])
                 }
                 else if (child_pid == 0)
                 {
+                    // Rediriger la sortie standard et erreur vers /dev/null
+                    freopen("/dev/null", "w", stdout);
+                    freopen("/dev/null", "w", stderr);
+
                     // Exécution de la commande interne dans le processus enfant
                     commands[i].exec_fn(args);
                     exit(0); // Ne pas laisser le processus enfant traîner
@@ -590,6 +596,11 @@ int exec_command(char* command, char** args, char* envp[])
     else if (child_pid == 0)
     {
         // Exécution de la commande externe dans le processus enfant
+        if(background){
+            // Rediriger la sortie standard et erreur vers /dev/null
+            freopen("/dev/null", "w", stdout);
+            freopen("/dev/null", "w", stderr);
+        }
         execute_command(command, args, envp);
     }
     else
@@ -603,10 +614,11 @@ int exec_command(char* command, char** args, char* envp[])
         {
             printf("[%d] %d\n", background_pid++, child_pid); // Afficher le PID du processus en arrière-plan
         }
-        child_pid = -1;
     }
+
     return 0;
 }
+
 
 
 
